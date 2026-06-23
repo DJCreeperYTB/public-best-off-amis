@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Best Of Amis</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main>
+    <section id="login" class="card login">
+      <h1 id="siteTitle">Best Of Amis</h1>
+      <p>Entre ton code ami ou créateur pour voir les clips disponibles.</p>
+      <form id="loginForm">
+        <label id="apiBaseRow">
+          Serveur privé
+          <input id="apiBaseInput" autocomplete="url" placeholder="https://ton-api.example.com">
+        </label>
+        <label>
+          Code d'accès
+          <input id="codeInput" autocomplete="one-time-code" placeholder="AMI-XXXX-XXXX">
+        </label>
+        <button type="submit">Entrer</button>
+      </form>
+      <p id="loginError" class="error"></p>
+      <p class="muted small">
+        Les vidéos ne sont pas stockées sur GitHub. Le serveur privé doit être allumé pour que le site fonctionne.
+      </p>
+    </section>
+
+    <section id="app" hidden>
+      <header class="topbar">
+        <div>
+          <h1>Clips Best Of</h1>
+          <p id="sessionInfo"></p>
+        </div>
+        <div class="sorts">
+          <button data-sort="popular" class="active">Popularité</button>
+          <button data-sort="unvoted">Non voté</button>
+          <button data-sort="newest">Récent</button>
+          <button id="logout" class="secondary">Changer de code</button>
+        </div>
+      </header>
+      <div id="videos" class="grid"></div>
+    </section>
+  </main>
+
+  <template id="videoTemplate">
+    <article class="video-card">
+      <video controls preload="metadata"></video>
+      <div class="body">
+        <h2></h2>
+        <div class="meta"></div>
+        <div class="votes">
+          <button class="up">▲ Upvote</button>
+          <button class="down">▼ Downvote</button>
+          <span class="score"></span>
+        </div>
+        <div class="creator-actions" hidden>
+          <button class="like">Déplacer dans LIKE</button>
+          <button class="delete">Supprimer</button>
+        </div>
+      </div>
+    </article>
+  </template>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

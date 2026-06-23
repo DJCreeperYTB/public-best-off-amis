@@ -1,0 +1,39 @@
+# Dependencies / build
+node_modules/
+dist/
+build/
+coverage/
+
+# Local/private runtime files - never commit these
+data/
+.env
+.env.*
+!.env.example
+*.log
+server.js
+Lancer_Public_BestOf_Amis.bat
+*.local.bat
+
+# Videos / generated media - never commit clips
+*.mp4
+*.mkv
+*.webm
+*.mov
+*.avi
+*.flv
+*.wmv
+*.m4v
+clips/
+videos/
+media/
+LIKE/
+
+# Best Of private state files
+.clip_reviews.json
+.progression.json
+.analyse_cache/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
