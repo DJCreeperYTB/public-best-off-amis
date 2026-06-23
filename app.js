@@ -156,7 +156,12 @@ function renderVideos(items, role) {
 
     player.src = mediaSrc(video.mediaUrl);
     title.textContent = video.title;
-    meta.textContent = `${formatDuration(video.duration)} · ${formatBytes(video.size)}`;
+    {
+      const metaParts = [];
+      if (Number(video.duration || 0) > 0) metaParts.push(formatDuration(video.duration));
+      if (Number(video.size || 0) > 0) metaParts.push(formatBytes(video.size));
+      meta.textContent = metaParts.length ? metaParts.join(" · ") : "Clip prêt à lire";
+    }
     score.textContent = `Score ${video.score} (${video.upvotes} / ${video.downvotes})`;
     up.textContent = video.userVote === 1 ? "▲ Upvoté" : "▲ Upvote";
     down.textContent = video.userVote === -1 ? "▼ Downvoté" : "▼ Downvote";
