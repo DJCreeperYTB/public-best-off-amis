@@ -10,6 +10,9 @@ const state = {
   label: localStorage.getItem("bestof_amis_label") || "",
   apiBase: queryApiBase || localStorage.getItem("bestof_amis_api") || defaultApiBase,
   sort: "popular",
+  allVideos: [],
+  visibleLimit: 60,
+  pageSize: 60,
 };
 
 const login = document.getElementById("login");
@@ -92,6 +95,7 @@ logout.addEventListener("click", () => {
 document.querySelectorAll("[data-sort]").forEach((button) => {
   button.addEventListener("click", () => {
     state.sort = button.dataset.sort;
+    state.visibleLimit = state.pageSize;
     document.querySelectorAll("[data-sort]").forEach((item) => item.classList.remove("active"));
     button.classList.add("active");
     loadVideos();
@@ -115,7 +119,8 @@ async function loadVideos() {
   videos.textContent = "Chargement…";
   try {
     const data = await api(`/api/videos?sort=${encodeURIComponent(state.sort)}`);
-    renderVideos(data.videos, data.role);
+    state.allVideos = data.videos;
+    renderVideos(state.allVideos, data.role);
   } catch (error) {
     videos.innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`;
     if (error.message.includes("Code requis") || error.message.includes("indisponible")) {
@@ -131,7 +136,12 @@ function renderVideos(items, role) {
     videos.innerHTML = "<p>Aucun clip disponible.</p>";
     return;
   }
-  for (const video of items) {
+  const visible = items.slice(0, state.visibleLimit);
+  const summary = document.createElement("div");
+  summary.className = "list-summary";
+  summary.textContent = `${items.length} clip(s) disponible(s) · ${visible.length} affiché(s)`;
+  videos.appendChild(summary);
+  for (const video of visible) {
     const node = template.content.cloneNode(true);
     const article = node.querySelector("article");
     const player = node.querySelector("video");
@@ -159,6 +169,18 @@ function renderVideos(items, role) {
       remove.addEventListener("click", () => creatorAction(video.id, "delete", article));
     }
     videos.appendChild(node);
+  }
+  if (visible.length < items.length) {
+    const more = document.createElement("div");
+    more.className = "load-more-card";
+    const button = document.createElement("button");
+    button.textContent = `Afficher ${Math.min(state.pageSize, items.length - visible.length)} clip(s) de plus`;
+    button.addEventListener("click", () => {
+      state.visibleLimit += state.pageSize;
+      renderVideos(state.allVideos, role);
+    });
+    more.appendChild(button);
+    videos.appendChild(more);
   }
 }
 

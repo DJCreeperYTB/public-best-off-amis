@@ -68,6 +68,23 @@ button:hover { filter: brightness(1.1); }
   grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
   gap: 18px;
 }
+.list-summary,
+.load-more-card {
+  grid-column: 1 / -1;
+}
+.list-summary {
+  color: #aab3c7;
+  font-size: 14px;
+}
+.load-more-card {
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  border: 1px dashed #30384c;
+  border-radius: 16px;
+  background: rgba(15, 18, 27, .72);
+}
+.load-more-card button { width: min(360px, 100%); }
 .video-card {
   overflow: hidden;
   border: 1px solid #252a38;
