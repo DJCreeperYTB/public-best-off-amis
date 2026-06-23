@@ -2,12 +2,13 @@
 
 const config = window.BESTOF_AMIS_CONFIG || {};
 const defaultApiBase = String(config.apiBase || "").replace(/\/+$/, "");
+const queryApiBase = String(new URLSearchParams(location.search).get("apiBase") || "").replace(/\/+$/, "");
 
 const state = {
   token: localStorage.getItem("bestof_amis_token") || "",
   role: localStorage.getItem("bestof_amis_role") || "",
   label: localStorage.getItem("bestof_amis_label") || "",
-  apiBase: localStorage.getItem("bestof_amis_api") || defaultApiBase,
+  apiBase: queryApiBase || localStorage.getItem("bestof_amis_api") || defaultApiBase,
   sort: "popular",
 };
 
@@ -26,6 +27,7 @@ const siteTitle = document.getElementById("siteTitle");
 
 siteTitle.textContent = config.siteName || "Best Of Amis";
 apiBaseInput.value = state.apiBase;
+if (queryApiBase) localStorage.setItem("bestof_amis_api", queryApiBase);
 if (defaultApiBase) apiBaseRow.classList.add("compact");
 
 function apiBase() {
@@ -99,10 +101,13 @@ document.querySelectorAll("[data-sort]").forEach((button) => {
 function showApp() {
   login.hidden = true;
   app.hidden = false;
-  sessionInfo.textContent =
-    state.role === "creator"
-      ? `Connecté avec un code créateur : ${state.label}`
-      : `Connecté avec un code ami : ${state.label}`;
+  if (state.role === "admin") {
+    sessionInfo.textContent = `Connecté en admin : ${state.label || "Admin"}`;
+  } else if (state.role === "creator") {
+    sessionInfo.textContent = `Connecté avec un code créateur : ${state.label}`;
+  } else {
+    sessionInfo.textContent = `Connecté avec un code ami : ${state.label}`;
+  }
   loadVideos();
 }
 
