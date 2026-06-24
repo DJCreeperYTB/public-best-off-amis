@@ -3,14 +3,19 @@
 const config = window.BESTOF_AMIS_CONFIG || {};
 const defaultApiBase = String(config.apiBase || "").replace(/\/+$/, "");
 const queryApiBase = String(new URLSearchParams(location.search).get("apiBase") || "").replace(/\/+$/, "");
+const storedApiBase = String(localStorage.getItem("bestof_amis_api") || "").replace(/\/+$/, "");
+const reusableStoredApiBase = !queryApiBase && isTryCloudflareUrl(storedApiBase) ? "" : storedApiBase;
+if (storedApiBase && !reusableStoredApiBase) localStorage.removeItem("bestof_amis_api");
 
 const state = {
   token: localStorage.getItem("bestof_amis_token") || "",
   role: localStorage.getItem("bestof_amis_role") || "",
   label: localStorage.getItem("bestof_amis_label") || "",
-  apiBase: queryApiBase || localStorage.getItem("bestof_amis_api") || defaultApiBase,
+  apiBase: queryApiBase || reusableStoredApiBase || defaultApiBase,
   sort: "popular",
   allVideos: [],
+  totalVideos: 0,
+  votedVideos: 0,
   visibleLimit: 60,
   pageSize: 60,
 };
@@ -35,6 +40,10 @@ if (defaultApiBase) apiBaseRow.classList.add("compact");
 
 function apiBase() {
   return String(apiBaseInput.value || state.apiBase || "").replace(/\/+$/, "");
+}
+
+function isTryCloudflareUrl(value) {
+  return /^https:\/\/[^/]+\.trycloudflare\.com$/i.test(String(value || "").replace(/\/+$/, ""));
 }
 
 function authHeaders() {
@@ -150,7 +159,9 @@ async function loadVideos() {
   videos.textContent = "Chargement…";
   try {
     const data = await api(`/api/videos?sort=${encodeURIComponent(state.sort)}`);
-    state.allVideos = data.videos;
+    state.totalVideos = data.videos.length;
+    state.allVideos = data.videos.filter((video) => !hasUserVoted(video));
+    state.votedVideos = state.totalVideos - state.allVideos.length;
     renderVideos(state.allVideos, data.role);
   } catch (error) {
     videos.innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`;
@@ -165,20 +176,28 @@ async function loadVideos() {
   }
 }
 
+function hasUserVoted(video) {
+  return Number(video.userVote || 0) !== 0;
+}
+
 function renderVideos(items, role) {
   videos.textContent = "";
   if (!items.length) {
-    videos.innerHTML = "<p>Aucun clip disponible.</p>";
+    videos.innerHTML =
+      state.totalVideos && state.votedVideos >= state.totalVideos
+        ? "<p>Tous les clips disponibles ont deja ete votes.</p>"
+        : "<p>Aucun clip disponible.</p>";
     return;
   }
   const visible = items.slice(0, state.visibleLimit);
   const summary = document.createElement("div");
   summary.className = "list-summary";
-  summary.textContent = `${items.length} clip(s) disponible(s) · ${visible.length} affiché(s)`;
+  summary.textContent =
+    `${items.length} clip(s) a voter - ${visible.length} affiche(s)` +
+    (state.votedVideos ? ` - ${state.votedVideos} deja vote(s) masque(s)` : "");
   videos.appendChild(summary);
   for (const video of visible) {
     const node = template.content.cloneNode(true);
-    const article = node.querySelector("article");
     const player = node.querySelector("video");
     const title = node.querySelector("h2");
     const meta = node.querySelector(".meta");
@@ -208,8 +227,8 @@ function renderVideos(items, role) {
     creatorActions.hidden = true;
     if (role === "admin") {
       creatorActions.hidden = false;
-      like.addEventListener("click", () => creatorAction(video.id, "like", article));
-      remove.addEventListener("click", () => creatorAction(video.id, "delete", article));
+      like.addEventListener("click", () => creatorAction(video.id, "like"));
+      remove.addEventListener("click", () => creatorAction(video.id, "delete"));
     }
     videos.appendChild(node);
   }
@@ -238,18 +257,20 @@ async function sendVote(id, value) {
   await loadVideos();
 }
 
-async function creatorAction(id, action, article) {
+async function creatorAction(id, action) {
   if (state.role !== "admin") {
     alert("Seul l'admin peut faire ca.");
     return;
   }
   const text =
     action === "delete"
-      ? "Supprimer définitivement ce clip côté serveur privé ?"
-      : "Déplacer ce clip dans LIKE côté serveur privé ?";
+      ? "Supprimer definitivement ce clip du dossier clips local ?"
+      : "Deplacer ce clip dans LIKE cote serveur prive ?";
   if (!confirm(text)) return;
   await api(`/api/creator/videos/${id}/${action}`, { method: "POST", body: "{}" });
-  article.remove();
+  state.totalVideos = Math.max(0, state.totalVideos - 1);
+  state.allVideos = state.allVideos.filter((video) => video.id !== id);
+  renderVideos(state.allVideos, state.role);
 }
 
 function formatDuration(value) {
@@ -277,4 +298,10 @@ function escapeHtml(value) {
   }[char]));
 }
 
-if (state.token) showApp();
+if (state.token && state.apiBase) {
+  showApp();
+} else if (state.token) {
+  localStorage.removeItem("bestof_amis_token");
+  localStorage.removeItem("bestof_amis_role");
+  localStorage.removeItem("bestof_amis_label");
+}
