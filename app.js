@@ -41,19 +41,50 @@ function authHeaders() {
   return state.token ? { Authorization: `Bearer ${state.token}` } : {};
 }
 
-async function api(path, options = {}) {
+function apiUrl(path) {
   const base = apiBase();
-  if (!base && location.protocol !== "http:" && location.protocol !== "https:") {
-    throw new Error("URL du serveur privé requise.");
+  if (!base) {
+    if (location.protocol === "file:" || location.hostname.endsWith(".github.io")) {
+      throw new Error(
+        "URL du serveur prive requise. Lance Lancer_Public_BestOf_Tunnel.bat depuis BEAST OF DJCREEPER, puis utilise la page ouverte automatiquement.",
+      );
+    }
+    return path;
   }
-  const response = await fetch(`${base}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...authHeaders(),
-      ...(options.headers || {}),
-    },
-  });
+  if (location.protocol === "https:" && /^http:\/\//i.test(base)) {
+    throw new Error(
+      "Depuis GitHub Pages, l'URL du serveur doit commencer par https://. Lance Lancer_Public_BestOf_Tunnel.bat pour obtenir une URL trycloudflare en HTTPS.",
+    );
+  }
+  return `${base}${path}`;
+}
+
+function connectionErrorMessage() {
+  const base = apiBase();
+  if (/\.trycloudflare\.com$/i.test(base)) {
+    return "Serveur prive injoignable. Le tunnel Cloudflare est probablement ferme ou expire : relance Lancer_Public_BestOf_Tunnel.bat et utilise le nouveau lien ouvert.";
+  }
+  if (/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(base)) {
+    return "Serveur prive local injoignable. Lance Lancer_Public_BestOf_Tunnel.bat ou Lancer_Serveur_Prive_BestOf_Amis.bat, puis garde la fenetre ouverte.";
+  }
+  return "Serveur prive injoignable. Verifie que le serveur ou le tunnel est lance, puis reessaie.";
+}
+
+async function api(path, options = {}) {
+  let response;
+  try {
+    response = await fetch(apiUrl(path), {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(),
+        ...(options.headers || {}),
+      },
+    });
+  } catch (error) {
+    if (error instanceof TypeError) throw new Error(connectionErrorMessage());
+    throw error;
+  }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || "Serveur privé indisponible.");
   return data;
@@ -123,7 +154,11 @@ async function loadVideos() {
     renderVideos(state.allVideos, data.role);
   } catch (error) {
     videos.innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`;
-    if (error.message.includes("Code requis") || error.message.includes("indisponible")) {
+    if (
+      error.message.includes("Code requis") ||
+      error.message.includes("indisponible") ||
+      error.message.includes("injoignable")
+    ) {
       localStorage.removeItem("bestof_amis_token");
       state.token = "";
     }
