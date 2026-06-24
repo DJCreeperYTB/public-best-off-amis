@@ -189,7 +189,9 @@ function renderVideos(items, role) {
     const like = node.querySelector(".like");
     const remove = node.querySelector(".delete");
 
+    player.preload = "metadata";
     player.src = mediaSrc(video.mediaUrl);
+    player.load();
     title.textContent = video.title;
     {
       const metaParts = [];
@@ -203,7 +205,8 @@ function renderVideos(items, role) {
 
     up.addEventListener("click", () => sendVote(video.id, 1));
     down.addEventListener("click", () => sendVote(video.id, -1));
-    if (role === "creator" || role === "admin") {
+    creatorActions.hidden = true;
+    if (role === "admin") {
       creatorActions.hidden = false;
       like.addEventListener("click", () => creatorAction(video.id, "like", article));
       remove.addEventListener("click", () => creatorAction(video.id, "delete", article));
@@ -236,6 +239,10 @@ async function sendVote(id, value) {
 }
 
 async function creatorAction(id, action, article) {
+  if (state.role !== "admin") {
+    alert("Seul l'admin peut faire ca.");
+    return;
+  }
   const text =
     action === "delete"
       ? "Supprimer définitivement ce clip côté serveur privé ?"
