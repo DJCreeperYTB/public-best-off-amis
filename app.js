@@ -12,7 +12,9 @@ const state = {
   role: localStorage.getItem("bestof_amis_role") || "",
   label: localStorage.getItem("bestof_amis_label") || "",
   apiBase: queryApiBase || reusableStoredApiBase || defaultApiBase,
+  view: "videos",
   sort: "popular",
+  filter: "all",
   allVideos: [],
   totalVideos: 0,
   votedVideos: 0,
@@ -32,6 +34,8 @@ const sessionInfo = document.getElementById("sessionInfo");
 const template = document.getElementById("videoTemplate");
 const logout = document.getElementById("logout");
 const siteTitle = document.getElementById("siteTitle");
+const leaderboardButton = document.getElementById("leaderboardButton");
+const personalUnvotedButton = document.getElementById("personalUnvotedButton");
 
 siteTitle.textContent = config.siteName || "Best Of Amis";
 apiBaseInput.value = state.apiBase;
@@ -134,12 +138,34 @@ logout.addEventListener("click", () => {
 
 document.querySelectorAll("[data-sort]").forEach((button) => {
   button.addEventListener("click", () => {
+    state.view = "videos";
+    state.filter = "all";
     state.sort = button.dataset.sort;
     state.visibleLimit = state.pageSize;
     document.querySelectorAll("[data-sort]").forEach((item) => item.classList.remove("active"));
+    personalUnvotedButton.classList.remove("active");
+    leaderboardButton.classList.remove("active");
     button.classList.add("active");
     loadVideos();
   });
+});
+
+personalUnvotedButton.addEventListener("click", () => {
+  state.view = "videos";
+  state.filter = "personal-unvoted";
+  state.visibleLimit = state.pageSize;
+  document.querySelectorAll("[data-sort]").forEach((item) => item.classList.remove("active"));
+  leaderboardButton.classList.remove("active");
+  personalUnvotedButton.classList.add("active");
+  loadVideos();
+});
+
+leaderboardButton.addEventListener("click", () => {
+  state.view = "leaderboard";
+  document.querySelectorAll("[data-sort]").forEach((item) => item.classList.remove("active"));
+  personalUnvotedButton.classList.remove("active");
+  leaderboardButton.classList.add("active");
+  loadLeaderboard();
 });
 
 function showApp() {
@@ -152,17 +178,42 @@ function showApp() {
   } else {
     sessionInfo.textContent = `Connecté avec un code ami : ${state.label}`;
   }
-  loadVideos();
+  if (state.view === "leaderboard") loadLeaderboard();
+  else loadVideos();
 }
 
 async function loadVideos() {
+  videos.className = "grid";
   videos.textContent = "Chargement…";
   try {
-    const data = await api(`/api/videos?sort=${encodeURIComponent(state.sort)}`);
+    const apiSort = state.filter === "personal-unvoted" ? "unvoted" : state.sort;
+    const data = await api(`/api/videos?sort=${encodeURIComponent(apiSort)}`);
     state.totalVideos = data.videos.length;
-    state.allVideos = data.videos.filter((video) => !hasUserVoted(video));
-    state.votedVideos = state.totalVideos - state.allVideos.length;
+    state.votedVideos = data.videos.filter(hasUserVoted).length;
+    state.allVideos =
+      state.filter === "personal-unvoted"
+        ? data.videos.filter((video) => !hasUserVoted(video))
+        : data.videos;
     renderVideos(state.allVideos, data.role);
+  } catch (error) {
+    videos.innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`;
+    if (
+      error.message.includes("Code requis") ||
+      error.message.includes("indisponible") ||
+      error.message.includes("injoignable")
+    ) {
+      localStorage.removeItem("bestof_amis_token");
+      state.token = "";
+    }
+  }
+}
+
+async function loadLeaderboard() {
+  videos.className = "leaderboard-view";
+  videos.textContent = "Chargement...";
+  try {
+    const data = await api("/api/leaderboard");
+    renderLeaderboard(data.voters || []);
   } catch (error) {
     videos.innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`;
     if (
@@ -180,12 +231,80 @@ function hasUserVoted(video) {
   return Number(video.userVote || 0) !== 0;
 }
 
+function renderLeaderboard(voters) {
+  videos.textContent = "";
+
+  const panel = document.createElement("section");
+  panel.className = "leaderboard-panel";
+
+  const header = document.createElement("div");
+  header.className = "leaderboard-header";
+  const title = document.createElement("h2");
+  title.textContent = "Leaderboard";
+  const subtitle = document.createElement("p");
+  subtitle.textContent = "Classement du plus grand nombre de votes au plus petit.";
+  header.append(title, subtitle);
+  panel.appendChild(header);
+
+  const list = document.createElement("div");
+  list.className = "leaderboard-list";
+  if (!voters.length) {
+    const empty = document.createElement("p");
+    empty.className = "muted";
+    empty.textContent = "Aucun vote pour le moment.";
+    list.appendChild(empty);
+  }
+
+  voters.forEach((voter, index) => {
+    const row = document.createElement("div");
+    row.className = "leaderboard-row";
+
+    const rank = document.createElement("div");
+    rank.className = "leaderboard-rank";
+    rank.textContent = `#${index + 1}`;
+
+    const identity = document.createElement("div");
+    identity.className = "leaderboard-identity";
+    const name = document.createElement("strong");
+    name.textContent = voter.label || "Sans pseudo";
+    const role = document.createElement("span");
+    role.className = "muted";
+    role.textContent = roleLabel(voter.role);
+    identity.append(name, role);
+
+    const counts = document.createElement("div");
+    counts.className = "leaderboard-counts";
+    counts.append(
+      leaderboardStat("Votes", voter.total),
+      leaderboardStat("Positifs", voter.upvotes, "up-count"),
+      leaderboardStat("Negatifs", voter.downvotes, "down-count"),
+    );
+
+    row.append(rank, identity, counts);
+    list.appendChild(row);
+  });
+
+  panel.appendChild(list);
+  videos.appendChild(panel);
+}
+
+function leaderboardStat(label, value, className = "") {
+  const item = document.createElement("span");
+  item.className = `leaderboard-stat ${className}`.trim();
+  const number = document.createElement("strong");
+  number.textContent = String(Number(value || 0));
+  const text = document.createElement("span");
+  text.textContent = label;
+  item.append(number, text);
+  return item;
+}
+
 function renderVideos(items, role) {
   videos.textContent = "";
   if (!items.length) {
     videos.innerHTML =
-      state.totalVideos && state.votedVideos >= state.totalVideos
-        ? "<p>Tous les clips disponibles ont deja ete votes.</p>"
+      state.filter === "personal-unvoted" && state.totalVideos && state.votedVideos >= state.totalVideos
+        ? "<p>Tous les clips disponibles ont deja ete votes par toi.</p>"
         : "<p>Aucun clip disponible.</p>";
     return;
   }
@@ -193,8 +312,10 @@ function renderVideos(items, role) {
   const summary = document.createElement("div");
   summary.className = "list-summary";
   summary.textContent =
-    `${items.length} clip(s) a voter - ${visible.length} affiche(s)` +
-    (state.votedVideos ? ` - ${state.votedVideos} deja vote(s) masque(s)` : "");
+    `${items.length} clip(s)${state.filter === "personal-unvoted" ? " sans ton vote" : ""} - ${visible.length} affiche(s)` +
+    (state.filter === "personal-unvoted" && state.votedVideos
+      ? ` - ${state.votedVideos} deja vote(s) par toi masque(s)`
+      : "");
   videos.appendChild(summary);
   for (const video of visible) {
     const node = template.content.cloneNode(true);
@@ -227,8 +348,8 @@ function renderVideos(items, role) {
     creatorActions.hidden = true;
     if (role === "admin") {
       creatorActions.hidden = false;
-      like.addEventListener("click", () => creatorAction(video.id, "like"));
-      remove.addEventListener("click", () => creatorAction(video.id, "delete"));
+      like.addEventListener("click", () => creatorAction(video.id, "like", player));
+      remove.addEventListener("click", () => creatorAction(video.id, "delete", player));
     }
     videos.appendChild(node);
   }
@@ -257,7 +378,7 @@ async function sendVote(id, value) {
   await loadVideos();
 }
 
-async function creatorAction(id, action) {
+async function creatorAction(id, action, player) {
   if (state.role !== "admin") {
     alert("Seul l'admin peut faire ca.");
     return;
@@ -265,12 +386,37 @@ async function creatorAction(id, action) {
   const text =
     action === "delete"
       ? "Supprimer definitivement ce clip du dossier clips local ?"
-      : "Deplacer ce clip dans LIKE cote serveur prive ?";
+      : "Deplacer ce clip dans le dossier LIKE local ?";
   if (!confirm(text)) return;
-  await api(`/api/creator/videos/${id}/${action}`, { method: "POST", body: "{}" });
-  state.totalVideos = Math.max(0, state.totalVideos - 1);
-  state.allVideos = state.allVideos.filter((video) => video.id !== id);
-  renderVideos(state.allVideos, state.role);
+  releaseLoadedMedia(player);
+  await wait(120);
+  try {
+    await api(`/api/creator/videos/${id}/${action}`, { method: "POST", body: "{}" });
+    state.totalVideos = Math.max(0, state.totalVideos - 1);
+    state.allVideos = state.allVideos.filter((video) => video.id !== id);
+    renderVideos(state.allVideos, state.role);
+  } catch (error) {
+    alert(error.message || "Action impossible.");
+    await loadVideos();
+  }
+}
+
+function releaseLoadedMedia(preferredPlayer) {
+  const players = Array.from(document.querySelectorAll("video"));
+  if (preferredPlayer && !players.includes(preferredPlayer)) players.unshift(preferredPlayer);
+  for (const player of players) {
+    try {
+      player.pause();
+      player.removeAttribute("src");
+      player.load();
+    } catch (_) {
+      // Ignorer: le serveur a aussi une protection anti-verrou.
+    }
+  }
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function formatDuration(value) {
@@ -286,6 +432,12 @@ function formatDuration(value) {
 function formatBytes(value) {
   const mb = Number(value || 0) / 1024 / 1024;
   return `${mb.toFixed(1)} Mo`;
+}
+
+function roleLabel(role) {
+  if (role === "admin") return "Admin";
+  if (role === "creator") return "Createur";
+  return "Ami";
 }
 
 function escapeHtml(value) {
