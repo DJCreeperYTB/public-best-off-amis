@@ -1,6 +1,8 @@
 "use strict";
 
 const config = window.BESTOF_AMIS_CONFIG || {};
+const API_TIMEOUT_MS = 15000;
+const HEALTH_TIMEOUT_MS = 7000;
 const defaultApiBase = String(config.apiBase || "").replace(/\/+$/, "");
 const queryApiBase = String(new URLSearchParams(location.search).get("apiBase") || "").replace(/\/+$/, "");
 const storedApiBase = String(localStorage.getItem("bestof_amis_api") || "").replace(/\/+$/, "");
@@ -43,7 +45,7 @@ if (queryApiBase) localStorage.setItem("bestof_amis_api", queryApiBase);
 if (defaultApiBase) apiBaseRow.classList.add("compact");
 
 function apiBase() {
-  return String(apiBaseInput.value || state.apiBase || "").replace(/\/+$/, "");
+  return String(apiBaseInput.value || state.apiBase || "").trim().replace(/\/+$/, "");
 }
 
 function isTryCloudflareUrl(value) {
@@ -74,33 +76,78 @@ function apiUrl(path) {
 
 function connectionErrorMessage() {
   const base = apiBase();
+  const suffix = base ? ` URL testee: ${base}/api/health` : "";
   if (/\.trycloudflare\.com$/i.test(base)) {
-    return "Serveur prive injoignable. Le tunnel Cloudflare est probablement ferme ou expire : relance Lancer_Public_BestOf_Tunnel.bat et utilise le nouveau lien ouvert.";
+    return `Serveur prive injoignable. Le tunnel Cloudflare est probablement ferme ou expire : relance Lancer_Public_BestOf_Tunnel.bat et utilise le nouveau lien ouvert.${suffix}`;
   }
   if (/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(base)) {
-    return "Serveur prive local injoignable. Lance Lancer_Public_BestOf_Tunnel.bat ou Lancer_Serveur_Prive_BestOf_Amis.bat, puis garde la fenetre ouverte.";
+    return `Serveur prive local injoignable. Lance Lancer_Public_BestOf_Tunnel.bat ou Lancer_Serveur_Prive_BestOf_Amis.bat, puis garde la fenetre ouverte.${suffix}`;
   }
-  return "Serveur prive injoignable. Verifie que le serveur ou le tunnel est lance, puis reessaie.";
+  return `Serveur prive injoignable. Verifie que le serveur ou le tunnel est lance, puis reessaie.${suffix}`;
 }
 
 async function api(path, options = {}) {
+  const {
+    timeoutMs = API_TIMEOUT_MS,
+    headers = {},
+    ...fetchOptions
+  } = options;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   let response;
   try {
     response = await fetch(apiUrl(path), {
-      ...options,
+      ...fetchOptions,
+      signal: fetchOptions.signal || controller.signal,
       headers: {
         "Content-Type": "application/json",
         ...authHeaders(),
-        ...(options.headers || {}),
+        ...headers,
       },
     });
   } catch (error) {
+    if (error.name === "AbortError") {
+      throw new Error(`Serveur prive trop lent a repondre. ${connectionErrorMessage()}`);
+    }
     if (error instanceof TypeError) throw new Error(connectionErrorMessage());
     throw error;
+  } finally {
+    clearTimeout(timeout);
   }
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || "Serveur privé indisponible.");
+  if (!response.ok) throw new Error(data.error || "Serveur prive indisponible.");
   return data;
+}
+
+function clearSession() {
+  localStorage.removeItem("bestof_amis_token");
+  localStorage.removeItem("bestof_amis_role");
+  localStorage.removeItem("bestof_amis_label");
+  state.token = "";
+  state.role = "";
+  state.label = "";
+}
+
+function showLogin(message = "") {
+  app.hidden = true;
+  login.hidden = false;
+  loginError.textContent = message;
+  state.apiBase = apiBase();
+  apiBaseInput.value = state.apiBase;
+}
+
+function shouldResetSession(message) {
+  return (
+    message.includes("Code requis") ||
+    message.includes("indisponible") ||
+    message.includes("injoignable") ||
+    message.includes("trop lent")
+  );
+}
+
+async function checkServerHealth() {
+  const data = await api("/api/health", { method: "GET", timeoutMs: HEALTH_TIMEOUT_MS });
+  if (!data.ok) throw new Error("Serveur prive indisponible.");
 }
 
 loginForm.addEventListener("submit", async (event) => {
@@ -126,14 +173,8 @@ loginForm.addEventListener("submit", async (event) => {
 });
 
 logout.addEventListener("click", () => {
-  localStorage.removeItem("bestof_amis_token");
-  localStorage.removeItem("bestof_amis_role");
-  localStorage.removeItem("bestof_amis_label");
-  state.token = "";
-  state.role = "";
-  state.label = "";
-  app.hidden = true;
-  login.hidden = false;
+  clearSession();
+  showLogin();
 });
 
 document.querySelectorAll("[data-sort]").forEach((button) => {
@@ -197,13 +238,9 @@ async function loadVideos() {
     renderVideos(state.allVideos, data.role);
   } catch (error) {
     videos.innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`;
-    if (
-      error.message.includes("Code requis") ||
-      error.message.includes("indisponible") ||
-      error.message.includes("injoignable")
-    ) {
-      localStorage.removeItem("bestof_amis_token");
-      state.token = "";
+    if (shouldResetSession(error.message)) {
+      clearSession();
+      showLogin(error.message);
     }
   }
 }
@@ -216,13 +253,9 @@ async function loadLeaderboard() {
     renderLeaderboard(data.voters || []);
   } catch (error) {
     videos.innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`;
-    if (
-      error.message.includes("Code requis") ||
-      error.message.includes("indisponible") ||
-      error.message.includes("injoignable")
-    ) {
-      localStorage.removeItem("bestof_amis_token");
-      state.token = "";
+    if (shouldResetSession(error.message)) {
+      clearSession();
+      showLogin(error.message);
     }
   }
 }
@@ -450,10 +483,21 @@ function escapeHtml(value) {
   }[char]));
 }
 
-if (state.token && state.apiBase) {
-  showApp();
-} else if (state.token) {
-  localStorage.removeItem("bestof_amis_token");
-  localStorage.removeItem("bestof_amis_role");
-  localStorage.removeItem("bestof_amis_label");
+async function bootstrap() {
+  if (state.token && state.apiBase) {
+    login.hidden = true;
+    app.hidden = false;
+    videos.textContent = "Verification du serveur...";
+    try {
+      await checkServerHealth();
+      showApp();
+    } catch (error) {
+      clearSession();
+      showLogin(error.message);
+    }
+  } else if (state.token) {
+    clearSession();
+  }
 }
+
+bootstrap();
